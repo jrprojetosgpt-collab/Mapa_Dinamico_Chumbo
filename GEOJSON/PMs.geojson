@@ -1,0 +1,13 @@
+{
+"type": "FeatureCollection",
+"name": "PMs",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::31982" } },
+"features": [
+{ "type": "Feature", "properties": { "id": null, "Nome": "PM-01", "CH": 5.0, "Pb": 0.5, "Pb_II": 0.5, "Pb_III": 0.5 }, "geometry": { "type": "Point", "coordinates": [ 512417.785635935491882, 6659803.108275510370731 ] } },
+{ "type": "Feature", "properties": { "id": null, "Nome": "PM-02", "CH": 4.8, "Pb": 0.5, "Pb_II": 0.5, "Pb_III": 0.5 }, "geometry": { "type": "Point", "coordinates": [ 512562.323860329459421, 6659519.083922250196338 ] } },
+{ "type": "Feature", "properties": { "id": null, "Nome": "PM-03", "CH": 3.8, "Pb": 6.5, "Pb_II": 13.0, "Pb_III": 30.0 }, "geometry": { "type": "Point", "coordinates": [ 512108.330685822933447, 6659340.163761844858527 ] } },
+{ "type": "Feature", "properties": { "id": null, "Nome": "PM-04", "CH": 4.0, "Pb": 21.4, "Pb_II": 16.0, "Pb_III": 10.0 }, "geometry": { "type": "Point", "coordinates": [ 512028.822751137544401, 6659624.106350714340806 ] } },
+{ "type": "Feature", "properties": { "id": null, "Nome": "PM-05", "CH": 4.2, "Pb": 2.5, "Pb_II": 0.5, "Pb_III": 0.5 }, "geometry": { "type": "Point", "coordinates": [ 512246.111006352701224, 6659620.924307519569993 ] } },
+{ "type": "Feature", "properties": { "id": null, "Nome": "PM-06", "CH": 4.4, "Pb": 12.3, "Pb_II": 8.0, "Pb_III": 0.5 }, "geometry": { "type": "Point", "coordinates": [ 512157.598334664886352, 6659781.337910773232579 ] } }
+]
+}

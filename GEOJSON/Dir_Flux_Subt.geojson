@@ -1,0 +1,12 @@
+{
+"type": "FeatureCollection",
+"name": "Dir_Flux_Subt",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::31982" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1 }, "geometry": { "type": "Point", "coordinates": [ 512398.041378759662621, 6659786.973247389309108 ] } },
+{ "type": "Feature", "properties": { "id": 6 }, "geometry": { "type": "Point", "coordinates": [ 512135.600874097493943, 6659752.620575590059161 ] } },
+{ "type": "Feature", "properties": { "id": 5 }, "geometry": { "type": "Point", "coordinates": [ 512222.057108281587716, 6659599.201080615632236 ] } },
+{ "type": "Feature", "properties": { "id": 2 }, "geometry": { "type": "Point", "coordinates": [ 512530.368115820980165, 6659519.111624671146274 ] } },
+{ "type": "Feature", "properties": { "id": 4 }, "geometry": { "type": "Point", "coordinates": [ 512036.123138246766757, 6659590.684906251728535 ] } }
+]
+}
