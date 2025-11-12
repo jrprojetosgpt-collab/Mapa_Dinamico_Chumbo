@@ -1,2 +1,222 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+from pathlib import Path
+from string import Template
+import json, webbrowser
+import geopandas as gpd
+
+# ==== ARQUIVOS LOCAIS ====
+AREA_SHP = Path(r"C:\Users\rodri\Desktop\PJ\AmbSolus\Postagens\SIG\SHAPES\Area_Estudo_PLUMA.shp")
+PMS_SHP  = Path(r"C:\Users\rodri\Desktop\PJ\AmbSolus\Postagens\SIG\SHAPES\PMs.shp")
+ISO_SHP  = Path(r"C:\Users\rodri\Desktop\PJ\AmbSolus\Postagens\SIG\SHAPES\Isolinhas_Flux_Subt.shp")
+DIRFLUXO_SHP = Path(r"C:\Users\rodri\Desktop\PJ\AmbSolus\Postagens\SIG\SHAPES\Dir_Flux_Subt.shp")
+
+HERE = Path(__file__).parent if "__file__" in globals() else Path.cwd()
+OUT_HTML = HERE / "mapa_interativo_isoconcentracao_publico.html"
+
+# ==== CONFIG ====
+INITIAL_ZOOM = 17
+MIN_ZOOM, MAX_ZOOM = 10, 22
+IS_TMS = False  # ajuste se seus tiles forem TMS
+
+# ==== TILES (RASTERS) ====
+TILES_URL_1 = "file:///C:/Users/rodri/Desktop/PJ/AmbSolus/Postagens/SIG/RASTER/TILES/Leaflet/18/{x}/{y}.png"
+TILES_URL_2 = "file:///C:/Users/rodri/Desktop/PJ/AmbSolus/Postagens/SIG/RASTER/TILES/Leaflet/18_II/18/{x}/{y}.png"
+TILES_URL_3 = "file:///C:/Users/rodri/Desktop/PJ/AmbSolus/Postagens/SIG/RASTER/TILES/Leaflet/18_III/18/{x}/{y}.png"
+
+# ==== FUNÇÃO DE CONVERSÃO ====
+def to_geojson_dict(shp: Path):
+    gdf = gpd.read_file(shp)
+    if gdf.crs and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs(4326)
+    return json.loads(gdf.to_json()), gdf.total_bounds
+
+area_gj, (axmin, aymin, axmax, aymax) = to_geojson_dict(AREA_SHP)
+pms_gj,  _ = to_geojson_dict(PMS_SHP)
+iso_gj,  _ = to_geojson_dict(ISO_SHP)
+dirfluxo_gj, _ = to_geojson_dict(DIRFLUXO_SHP)
+
+FIT_BOUNDS = [[aymin, axmin], [aymax, axmax]]
+
+# ==== HTML ====
+tpl = Template(r"""<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Mapa Interativo — Isoconcentração de Pb</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  html, body, #map { height:100%; margin:0; }
+  .legend { position:absolute; bottom:12px; left:12px; z-index:1000; background:#fff; border-radius:6px; padding:8px 10px; box-shadow:0 0 10px rgba(0,0,0,.15); font:12px/1.3 Arial, sans-serif; }
+  .sym { display:flex; align-items:center; gap:6px; margin:4px 0; }
+  .sym .pm { width:18px; height:18px; display:inline-block; position:relative; border:1.5px solid #000; border-radius:50%; background:#00AEEF; }
+  .sym .pm::before, .sym .pm::after { content:""; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:#000; }
+  .sym .pm::before { width:1.5px; height:10px; }
+  .sym .pm::after  { width:10px; height:1.5px; }
+  .line-sym { width:18px; height:2px; background:#000; display:inline-block; }
+  .arrow-sym { width:18px; height:18px; display:inline-block; background:no-repeat center/contain url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><polygon points="12,2 18,10 14,10 14,22 10,22 10,10 6,10" fill="%23000"/></svg>'); }
+  .label-halo { font:12px Arial, sans-serif; font-weight:900; color:#000; text-shadow:-1px -1px 0 #fff, 0 -1px 0 #fff, 1px -1px 0 #fff, -1px 0 0 #fff, 1px 0 0 #fff, -1px 1px 0 #fff, 0 1px 0 #fff, 1px 1px 0 #fff; white-space:nowrap; }
+  .label-min { font:12px Arial, sans-serif; font-weight:700; color:#000; background:transparent; border:none; box-shadow:none; white-space:nowrap; text-shadow:-1px -1px 0 #fff, 0 -1px 0 #fff, 1px -1px 0 #fff, -1px 0 0 #fff, 1px 0 0 #fff, -1px 1px 0 #fff, 0 1px 0 #fff, 1px 1px 0 #fff; }
+  .leaflet-tooltip.label-min::before { display:none !important; }
+  .raster-legend { margin-top:6px; border-top:1px solid #ddd; padding-top:6px; }
+  .ramp-title { font-weight:700; margin:6px 0 2px; }
+  .ramp-row { display:flex; align-items:center; gap:8px; margin:3px 0; }
+  .sw { width:16px; height:12px; border:1px solid #999; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="legend" id="legend">
+  <div style="font-weight:700; margin-bottom:4px;">Legenda</div>
+  <div class="sym"><span style="width:14px;height:14px;border:2px solid #0066CC;background:#66B2FF55;display:inline-block;"></span> Área de Estudo</div>
+  <div class="sym"><span class="pm"></span> Poços de Monitoramento (PM)</div>
+  <div class="sym"><span class="line-sym"></span> Linhas Equipotenciais (m)</div>
+  <div class="sym"><span class="arrow-sym"></span> Direcionamento do Fluxo Subterrâneo</div>
+
+  <div class="raster-legend">
+    <div class="ramp-title">1° Campanha Pb (µg/L)</div>
+    <div class="ramp-row"><span class="sw" style="background:#2f7db6"></span>0.5 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#9bd18b"></span>6 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#f7e9a6"></span>11 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#f39a4a"></span>16 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#d83a2e"></span>21 µg/L</div>
+  </div>
+
+  <div class="raster-legend">
+    <div class="ramp-title">2° Campanha Pb (µg/L)</div>
+    <div class="ramp-row"><span class="sw" style="background:#2f7db6"></span>0.5 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#9bd18b"></span>4.37 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#f7e9a6"></span>8.24 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#f39a4a"></span>12.12 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#d83a2e"></span>16 µg/L</div>
+  </div>
+
+  <div class="raster-legend">
+    <div class="ramp-title">3° Campanha Pb (µg/L)</div>
+    <div class="ramp-row"><span class="sw" style="background:#2f7db6"></span>0.5 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#9bd18b"></span>7.8 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#f7e9a6"></span>15.24 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#f39a4a"></span>22.62 µg/L</div>
+    <div class="ramp-row"><span class="sw" style="background:#d83a2e"></span>30 µg/L</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const AREA_GJ = $AREA_GJ;
+const PMS_GJ  = $PMS_GJ;
+const ISO_GJ  = $ISO_GJ;
+const DIR_GJ  = $DIR_GJ;
+
+const map = L.map('map', { minZoom:$MIN_ZOOM, maxZoom:$MAX_ZOOM });
+
+const esri = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { attribution:"Esri, Maxar, Earthstar Geographics, and the GIS User Community" }).addTo(map);
+
+const raster18     = L.tileLayer("$TILES_URL_1", { tms:$IS_TMS, minNativeZoom:18, maxNativeZoom:18, minZoom:$MIN_ZOOM, maxZoom:$MAX_ZOOM, tileSize:256 }).addTo(map);
+const raster18_ii  = L.tileLayer("$TILES_URL_2", { tms:$IS_TMS, minNativeZoom:18, maxNativeZoom:18, minZoom:$MIN_ZOOM, maxZoom:$MAX_ZOOM, tileSize:256 }).addTo(map);
+const raster18_iii = L.tileLayer("$TILES_URL_3", { tms:$IS_TMS, minNativeZoom:18, maxNativeZoom:18, minZoom:$MIN_ZOOM, maxZoom:$MAX_ZOOM, tileSize:256 }).addTo(map);
+
+const area = L.geoJSON(AREA_GJ, { style:{ color:"#0066CC", weight:2, fillColor:"#66B2FF", fillOpacity:0.15 } }).addTo(map);
+
+const isoLayer = L.geoJSON(ISO_GJ, {
+  style:{ color:"#000", weight:2, fillOpacity:0 },
+  onEachFeature:(f,layer)=>{
+    const elev = f.properties?.ELEV;
+    if (elev===undefined || isNaN(elev)) return;
+    layer.bindTooltip(`${Number(elev).toFixed(1)}m`, { permanent:true, direction:'bottom', offset:[0,9], className:'label-min', opacity:1 });
+  }
+}).addTo(map);
+
+/* ===== Flecha sólida (metade do tamanho) ===== */
+/* Base: APONTANDO PARA CIMA (0° = NORTE). Rotação aplicada em graus. */
+function arrowIcon(angleDeg){
+  const svg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24">
+    <g transform="translate(12,12) rotate(${angleDeg}) translate(-12,-12)">
+      <!-- seta sólida, ponta no topo (12,2) -->
+      <polygon points="12,2 18,10 14,10 14,22 10,22 10,10 6,10" fill="#000"/>
+    </g>
+  </svg>`;
+  return L.divIcon({ html: svg, className:"", iconSize:[22,22], iconAnchor:[11,11] });
+}
+
+/* Ângulo: usa campo do shape (se existir), senão fallback por id */
+function resolveAngle(props){
+  const fallback = { 1:230, 2:272, 4:170, 5:225, 6:215 };
+  const angleFields = ['angulo','angle','rot','rotation','ROT','Ang','ANG','grau','graus','GRAUS'];
+  for (const k of angleFields){
+    if (props && props[k] != null && !isNaN(Number(props[k]))) return Number(props[k]);
+  }
+  const id = Number(props?.id ?? props?.ID ?? props?.Id);
+  return fallback[id] ?? 0; // 0° = apontando para cima
+}
+
+const dirFluxo = L.geoJSON(DIR_GJ, {
+  pointToLayer:(f, latlng)=> L.marker(latlng, { icon: arrowIcon(resolveAngle(f.properties)) }),
+  onEachFeature:(f, layer)=>{
+    const props = f.properties || {};
+    const ang = resolveAngle(props);
+    layer.bindTooltip(`Direção: ${ang.toFixed(0)}°`, { direction:'top', offset:[0,-10], className:'label-min', permanent:false });
+  }
+}).addTo(map);
+/* ============================================== */
+
+function pmIcon(){
+  const svg = `
+    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="9" cy="9" r="6.5" fill="#00AEEF" stroke="#000" stroke-width="1.5"/>
+      <line x1="9" y1="4" x2="9" y2="14" stroke="#000" stroke-width="1.5"/>
+      <line x1="4" y1="9" x2="14" y2="9" stroke="#000" stroke-width="1.5"/>
+    </svg>`;
+  return L.divIcon({ html: svg, className:"", iconSize:[18,18], iconAnchor:[9,9] });
+}
+
+const pms = L.geoJSON(PMS_GJ, {
+  pointToLayer:(f,latlng)=> L.marker(latlng, { icon: pmIcon() }),
+  onEachFeature:(f,layer)=>{
+    const nome = (f.properties?.Nome ?? f.properties?.nome ?? f.properties?.NOME ?? "").toString();
+    if (nome) layer.bindTooltip(nome, { permanent:true, direction:"top", offset:[0,-7], opacity:1, className:"label-halo" });
+    const rows = Object.entries(f.properties || {}).map(([k,v]) => `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>`).join("");
+    layer.bindPopup(`<div style="font:12px Arial, sans-serif;"><b>Poços de Monitoramento (PM)</b><br/><table>${rows}</table></div>`);
+  }
+}).addTo(map);
+
+L.control.layers(
+  { "Satélite (Esri)": esri },
+  {
+    "Área de Estudo": area,
+    "Poços de Monitoramento (PM)": pms,
+    "Linhas Equipotenciais (m)": isoLayer,
+    "Direcionamento do Fluxo Subterrâneo": dirFluxo,
+    "1° Campanha Pb": raster18,
+    "2° Campanha Pb": raster18_ii,
+    "3° Campanha Pb": raster18_iii
+  },
+  { collapsed:false }
+).addTo(map);
+
+map.fitBounds($FIT_BOUNDS);
+map.setZoom($INITIAL_ZOOM);
+</script>
+</body>
+</html>
+""")
+
+html = tpl.safe_substitute(
+    AREA_GJ=json.dumps(area_gj, ensure_ascii=False),
+    PMS_GJ=json.dumps(pms_gj, ensure_ascii=False),
+    ISO_GJ=json.dumps(iso_gj, ensure_ascii=False),
+    DIR_GJ=json.dumps(dirfluxo_gj, ensure_ascii=False),
+    MIN_ZOOM=MIN_ZOOM, MAX_ZOOM=MAX_ZOOM, INITIAL_ZOOM=INITIAL_ZOOM,
+    FIT_BOUNDS=json.dumps(FIT_BOUNDS),
+    TILES_URL_1=TILES_URL_1, TILES_URL_2=TILES_URL_2, TILES_URL_3=TILES_URL_3,
+    IS_TMS=str(IS_TMS).lower()
+)
+
+OUT_HTML.write_text(html, encoding="utf-8")
+print("✅ HTML gerado:", OUT_HTML.resolve())
+try:
+  webbrowser.open(OUT_HTML.as_uri())
+except Exception:
+  pass
